@@ -13,7 +13,7 @@ import configparser
 config = configparser.ConfigParser()
 config.read('config.txt')
 
-# 興味のあるヘッダーと興味のないヘッダー
+# 初期に省くヘッダー要素等
 headers_of_interest = ["cookie", "user-agent", "Set-Cookie", "referer", "set-cookie"]
 headers_of_not_interest = [":authority", ":method", ":path", ":scheme"]
 
@@ -49,7 +49,7 @@ def extract_payload_info(payload_text):
             payload_info[key] = value
     return payload_info
 
-# ヘッダーの興味のある部分を追加
+# ヘッダーの追加
 def add_header_interest(header_text):
     lines = header_text.split("\n")
     for line in lines:
@@ -117,6 +117,11 @@ print(response.text)
     '''
     code_text.delete("1.0", tk.END)
     code_text.insert(tk.END, code)
+
+
+
+
+
 
 # GUI部分の定義（ウィンドウ、ラベル、ボタンなど）
 window = tk.Tk()
