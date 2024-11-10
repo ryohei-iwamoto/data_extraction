@@ -3,35 +3,25 @@ from tkinter import ttk
 import tkinter.messagebox
 import requests
 import json
-from io import BytesIO
-import webbrowser
 import tempfile
+import webbrowser
 from html.parser import HTMLParser
 import re
 import configparser
 
+# 設定ファイルの読み込み
 config = configparser.ConfigParser()
 config.read('config.txt')
-headers_of_interest = [
-                    "cookie",
-                    "user-agent", 
-                    "Set-Cookie",
-                    "referer",
-                    "set-cookie",
-                    ]
 
-headers_of_not_interest = [
-                    ":authority",
-                    ":method",
-                    ":path",
-                    ":scheme",
-                    ]
+# 興味のあるヘッダーと興味のないヘッダー
+headers_of_interest = ["cookie", "user-agent", "Set-Cookie", "referer", "set-cookie"]
+headers_of_not_interest = [":authority", ":method", ":path", ":scheme"]
 
-
+# ヘッダーテキストの変更時の処理
 def on_text_change(event):
-    header_content = header_text.get("1.0", tk.END).strip()
-    add_header_interest(header_content)
+    add_header_interest(header_text.get("1.0", tk.END).strip())
 
+# HTMLコンテンツかどうかをチェックするクラス
 class HTMLChecker(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -40,6 +30,7 @@ class HTMLChecker(HTMLParser):
     def handle_starttag(self, tag, attrs):
         self.is_html = True
 
+# ヘッダー情報の抽出
 def extract_header_info(header_text):
     header_info = {}
     for header in headers_of_interest:
@@ -49,6 +40,7 @@ def extract_header_info(header_text):
             header_info[header] = match.group(1).strip()
     return header_info
 
+# ペイロード情報の抽出
 def extract_payload_info(payload_text):
     payload_info = {}
     for line in payload_text.split("\n"):
@@ -57,182 +49,76 @@ def extract_payload_info(payload_text):
             payload_info[key] = value
     return payload_info
 
-
+# ヘッダーの興味のある部分を追加
 def add_header_interest(header_text):
     lines = header_text.split("\n")
-    for i in range(len(lines)):
-        line = lines[i].strip()
-        if line.endswith(":"):
-            header_name = line[:-1]
-            if header_name not in (header for header in headers_of_not_interest):
-                headers_of_interest.append(header_name)
+    for line in lines:
+        header_name = line.strip().rstrip(":")
+        if header_name and header_name not in headers_of_not_interest:
+            headers_of_interest.append(header_name)
 
-
-def extract_all_headers(header_text):
-    headers = []
-    lines = header_text.split("\n")
-    for i in range(len(lines)):
-        line = lines[i].strip()
-        if line.endswith(":"): 
-            header_name = line[:-1]
-            headers.append(header_name)
-    return headers
-
+# レスポンス領域のクリア
 def clear_response():
     response_text.delete("1.0", tk.END)
 
-
+# コードのコピー
 def copy_code():
     window.clipboard_clear()
     window.clipboard_append(code_text.get("1.0", tk.END))
 
+# 設定の読み込み
 def load_config():
-    global config
-    config.read('config.txt')
-    stay_on_top = config.get('Settings', 'StayOnTop', fallback='no')
-    if stay_on_top.lower() == 'yes':
-        window.attributes('-topmost', 1)
-        stay_on_top_var.set(True)
-    else:
-        window.attributes('-topmost', 0)
-        stay_on_top_var.set(False)
+    stay_on_top = config.get('Settings', 'StayOnTop', fallback='no').lower()
+    stay_on_top_var.set(stay_on_top == 'yes')
+    window.attributes('-topmost', 1 if stay_on_top == 'yes' else 0)
 
+# 設定の保存
 def save_config():
-    config['Settings'] = {}
-    config['Settings']['StayOnTop'] = 'yes' if stay_on_top_var.get() else 'no'
+    config['Settings'] = {'StayOnTop': 'yes' if stay_on_top_var.get() else 'no'}
     with open('config.txt', 'w') as f:
         config.write(f)
 
+# 常に最前面に表示の切り替え
 def toggle_stay_on_top():
-    if stay_on_top_var.get():
-        window.attributes('-topmost', 1)
-    else:
-        window.attributes('-topmost', 0)
+    window.attributes('-topmost', 1 if stay_on_top_var.get() else 0)
     save_config()
 
+# リクエストの送信
 def send_request():
     try:
-        header = extract_header_info(header_text.get("1.0", tk.END).strip())
+        headers = extract_header_info(header_text.get("1.0", tk.END).strip())
         payload = extract_payload_info(payload_text.get("1.0", tk.END).strip())
-        url = url_entry.get() or header.get("url", "YOUR_URL")
+        url = url_entry.get() or headers.get("url", "YOUR_URL")
         method = method_var.get().lower()
-        request_method = getattr(requests, method, None)
-        if request_method:
-            response = request_method(url,         headers=header, data=payload)
-            response_text.delete("1.0", tk.END)
-            if response.headers.get("Content-Type", "").startswith("text/html"):
-                checker = HTMLChecker()
-                checker.feed(response.text)
-                if checker.is_html:
-                    temp_file = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
-                    temp_file.write(response.content)
-                    temp_file.close()
-                    webbrowser.open('file://' + temp_file.name)
-                    response_text.insert(tk.END, response.text)
-                else:
-                    response_text.insert(tk.END, response.text)
-            else:
-                response_text.insert(tk.END, response.text)
-        else:
-            response_text.delete("1.0", tk.END)
-            response_text.insert(tk.END, "Unsupported method: " + method)
+        response = getattr(requests, method, None)(url, headers=headers, data=payload)
+        response_text.delete("1.0", tk.END)
+        response_text.insert(tk.END, response.text)
     except Exception as e:
-        print(e)
         tk.messagebox.showerror("エラー", str(e))
 
-
+# コードの生成
 def generate_code():
-    header = extract_header_info(header_text.get("1.0", tk.END).strip())
+    headers = extract_header_info(header_text.get("1.0", tk.END).strip())
     payload = extract_payload_info(payload_text.get("1.0", tk.END).strip())
-    url = url_entry.get() or header.get("url", "URLを入れてください")
+    url = url_entry.get() or headers.get("url", "URLを入れてください")
     method = method_var.get().lower()
     code = f'''
 import requests
 
 url = "{url}"
 
-headers = {json.dumps(header, indent=4)}
+headers = {json.dumps(headers, indent=4)}
 
 payload = {json.dumps(payload, indent=4)}
 
 response = requests.{method}(url, headers=headers, params=payload)
 
 print(response.text)
-            '''
-    
+    '''
     code_text.delete("1.0", tk.END)
     code_text.insert(tk.END, code)
 
-
-def open_dialog():
-    all_headers = extract_all_headers(header_text.get("1.0", tk.END).strip())
-    
-    dialog = tk.Toplevel(window)
-    if stay_on_top_var.get():
-        dialog.attributes("-topmost", True)
-    else:
-        dialog.attributes("-topmost", False)
-    
-    dialog.title("含める情報を選択")
-    dialog.geometry("450x600")
-
-    container = tk.Frame(dialog)
-    container.pack(fill='both', expand=True)
-    
-    canvas = tk.Canvas(container)
-
-    def on_canvas_scroll(event):
-        canvas.yview_scroll(-1 * (event.delta // 120), "units")
-
-    scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
-    scrollable_frame = tk.Frame(canvas)
-
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-
-    canvas.bind("<MouseWheel>", on_canvas_scroll)
-    scrollable_frame.bind("<MouseWheel>", on_canvas_scroll)
-
-    header_vars = {header: tk.BooleanVar() for header in all_headers}
-
-    for i, header in enumerate(all_headers):
-        checkbutton = tk.Checkbutton(scrollable_frame, text=header, variable=header_vars[header])
-        checkbutton.grid(row=i, sticky='w')
-        checkbutton.bind("<MouseWheel>", on_canvas_scroll)
-        if header in [h for h in headers_of_interest]:
-            checkbutton.select()
-
-    def update_headers():
-        headers_of_interest.clear()
-        for header, var in header_vars.items():
-            if var.get():
-                headers_of_interest.append(header)
-        dialog.destroy()
-
-    def select_all():
-        for var in header_vars.values():
-            var.set(True)
-
-    def deselect_all():
-        for var in header_vars.values():
-            var.set(False)
-
-    select_all_button = tk.Button(scrollable_frame, text="全選択", command=select_all)
-    select_all_button.grid(row=len(all_headers) + 2, column=0, padx=(5, 0))
-
-    deselect_all_button = tk.Button(scrollable_frame, text="全選択解除", command=deselect_all)
-    deselect_all_button.grid(row=len(all_headers) + 2, column=1, padx=(5, 0))
-
-    ok_button = tk.Button(scrollable_frame, text="OK", command=update_headers)
-    ok_button.grid(row=len(all_headers) + 2, column=2, padx=(5, 0))
-
-    scrollable_frame.update_idletasks()
-    canvas.config(scrollregion=canvas.bbox("all"))
-    canvas.config(yscrollcommand=scrollbar.set)
-
-
+# GUI部分の定義（ウィンドウ、ラベル、ボタンなど）
 window = tk.Tk()
 window.title("データちゅるちゅる")
 window.geometry("800x600")
@@ -264,8 +150,6 @@ tab_control_input.add(payload_tab, text='Payload(ペイロード)')
 header_text = tk.Text(header_tab, width=50, height=15)
 header_text.pack(padx=10, pady=10, fill='both', expand=True)
 header_text.bind("<KeyRelease>", on_text_change)
-header_text.bind("<ButtonRelease-1>", on_text_change)
-header_text.bind("<ButtonRelease-2>", on_text_change)
 
 payload_text = tk.Text(payload_tab, width=50, height=15)
 payload_text.pack(padx=10, pady=10, fill='both', expand=True)
@@ -288,22 +172,11 @@ response_text.pack(padx=10, pady=10, fill='both', expand=True)
 
 tab_control_output.pack(expand=1, fill='both')
 
-
-##########################################
-# 下部ボタン
-##########################################
 generate_button = tk.Button(window, text="コードを生成する", command=generate_code)
 generate_button.pack(pady=10, padx=(5,0), side='left')
 
 copy_button = tk.Button(window, text="コピー", command=copy_code)
 copy_button.pack(pady=10, padx=(5,0), side='left')
-
-dialog_button = tk.Button(window, text="ヘッダを選択", command=open_dialog)
-dialog_button.pack(pady=10, padx=(5,0), side='left')
-
-stay_on_top_var = tk.BooleanVar()  # 常に最前面に表示するかどうか
-stay_on_top_check = tk.Checkbutton(window, text="常に最前面に表示", variable=stay_on_top_var, command=toggle_stay_on_top)
-stay_on_top_check.pack(pady=10, padx=(160,0), side='left')
 
 clear_button = tk.Button(window, text="クリア", command=clear_response)
 clear_button.pack(pady=10, padx=(0,5), side='right')
@@ -311,6 +184,9 @@ clear_button.pack(pady=10, padx=(0,5), side='right')
 send_request_button = tk.Button(window, text="リクエストを送信する", command=send_request)
 send_request_button.pack(pady=10, padx=(0,5), side='right')
 
+stay_on_top_var = tk.BooleanVar()
+stay_on_top_check = tk.Checkbutton(window, text="常に最前面に表示", variable=stay_on_top_var, command=toggle_stay_on_top)
+stay_on_top_check.pack(pady=10, padx=(160,0), side='left')
 
 load_config()
 window.mainloop()
